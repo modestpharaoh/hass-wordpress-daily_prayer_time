@@ -10,7 +10,7 @@
                 },
                 "data_description": {
                     "endpoint": "WordPress Masjid website. e.g., https://masjid-site.com",
-                    "api_path": "API path for full year, usually wp-json/dpt/v1/prayertime?filter=year"
+                    "api_path": "API path to WordPress plugin, usually wp-json/dpt/v1/prayertime"
                 },
                 "errors": {
                     "invalid_url": "Invalid URL. Please provide a valid HTTP or HTTPS URL."
@@ -30,7 +30,7 @@
                 },
                 "data_description": {
                     "endpoint": "WordPress Masjid website. e.g., https://masjid-site.com",
-                    "api_path": "API path for full year, usually wp-json/dpt/v1/prayertime?filter=year"
+                    "api_path": "API path to WordPress plugin, usually wp-json/dpt/v1/prayertime"
                 },
                 "errors": {
                     "invalid_url": "Invalid URL. Please provide a valid HTTP or HTTPS URL."

@@ -19,11 +19,13 @@ PRAYER_TIME_KEYS: Final = [
     "maghrib_jamah",
     "isha_begins",
     "isha_jamah",
+    "jumuah_1",
+    "jumuah_2",
 ]
 
 CONF_ENDPOINT: Final = "endpoint"
 CONF_API_PATH: Final = "api_path"
-DEFAULT_API_PATH: Final = "wp-json/dpt/v1/prayertime?filter=year"
+DEFAULT_API_PATH: Final = "wp-json/dpt/v1/prayertime"
 
 # Additional sensor key for Hijri date
 HIJRI_DATE_KEY: Final = "hijri_date"

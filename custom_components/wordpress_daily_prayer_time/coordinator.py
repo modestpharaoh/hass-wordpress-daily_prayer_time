@@ -42,7 +42,10 @@ class PrayerTimeCoordinator(DataUpdateCoordinator):
         """Initialize the coordinator."""
         # Remove trailing slashes from the endpoint
         endpoint = endpoint.rstrip("/")
-        self.fullendpoint = endpoint + '/' + api_path
+        api_path = api_path.split("?")[0].strip("/")
+        base_endpoint = f"{endpoint}/{api_path}"
+        self.yearendpoint = f"{base_endpoint}?filter=year"
+        self.todayendpoint = f"{base_endpoint}?filter=today"
         self.hass = hass
         # Extract main domain from endpoint
         parsed_url = urlparse(endpoint)
@@ -71,13 +74,13 @@ class PrayerTimeCoordinator(DataUpdateCoordinator):
 
     async def _async_update_data(self) -> Dict[str, Any]:
         """Fetch prayer time data from the endpoint or fallback to saved file."""
-        _LOGGER.debug(f"_async_update_data: Fetching prayer time data from endpoint: {self.fullendpoint}")
+        _LOGGER.debug(f"_async_update_data: Fetching prayer time data from endpoint: {self.yearendpoint}")
         session = async_get_clientsession(self.hass)
         timeout = aiohttp.ClientTimeout(total=QUERY_TIMEOUT)
         raw_data: list = []
         prayer_times_info: dict[str, Any] = {}
         try:
-            async with session.get(self.fullendpoint, timeout=timeout) as response:
+            async with session.get(self.yearendpoint, timeout=timeout) as response:
                 if response.status != 200:
                     raise UpdateFailed(f"Error fetching data: {response.status}")
                 _LOGGER.debug(f"Fetched prayer time successfully: {response.status}")
@@ -95,6 +98,42 @@ class PrayerTimeCoordinator(DataUpdateCoordinator):
         except Exception as err:
             _LOGGER.error(f"Failed to process data: {err}")
             raise UpdateFailed(f"Failed to process data: {err}") from err
+            
+        try:
+            async with session.get(self.todayendpoint, timeout=timeout) as response:
+                if response.status == 200:
+                    today_data_raw = await response.json()
+                    
+                    def _extract(data):
+                        if isinstance(data, dict):
+                            return data
+                        if isinstance(data, list) and len(data) > 0:
+                            return _extract(data[0])
+                        return {}
+                    
+                    today_dict = _extract(today_data_raw)
+                    if "hijri_date_convert" in today_dict:
+                        prayer_times_info["hijri_date"] = today_dict["hijri_date_convert"]
+                        
+                    if "jumuah" in today_dict and isinstance(today_dict["jumuah"], list):
+                        jumuah_list = today_dict["jumuah"]
+                        now = datetime.now()
+                        days_ahead = (4 - now.weekday()) % 7
+                        target_date = now.date() + timedelta(days=days_ahead)
+                        
+                        if len(jumuah_list) > 0 and jumuah_list[0]:
+                            parsed_time = dt_util.parse_time(jumuah_list[0])
+                            if parsed_time:
+                                dt = datetime.combine(target_date, parsed_time)
+                                prayer_times_info["jumuah_1"] = dt_util.as_utc(dt)
+                                
+                        if len(jumuah_list) > 1 and jumuah_list[1]:
+                            parsed_time = dt_util.parse_time(jumuah_list[1])
+                            if parsed_time:
+                                dt = datetime.combine(target_date, parsed_time)
+                                prayer_times_info["jumuah_2"] = dt_util.as_utc(dt)
+        except Exception as err:
+            _LOGGER.warning(f"Failed to fetch today's extra data: {err}")
         
         if len(prayer_times_info) > 0:
             _LOGGER.debug(f"Parsed prayer times info: {prayer_times_info}")
@@ -135,7 +174,7 @@ class PrayerTimeCoordinator(DataUpdateCoordinator):
         _LOGGER.debug(f"Attempting to load saved prayer time data from file")
         try:
             # Extract main domain from endpoint
-            parsed_url = urlparse(self.fullendpoint)
+            parsed_url = urlparse(self.yearendpoint)
             main_domain = parsed_url.netloc.split(":")[0]  # Remove port if present
             filename = f"{main_domain}-prayer_for_year.json"
             file_path = os.path.join(self.hass.config.config_dir, filename)
@@ -177,15 +216,15 @@ class PrayerTimeCoordinator(DataUpdateCoordinator):
                     if key in ["d_date"]:
                         continue
                     elif key == "hijri_date":
-                        prayer_times_info[key] = day_data[key]
+                        prayer_times_info[str(key)] = day_data[key]
                         _LOGGER.debug(f"Parsed Hijri date: {day_data[key]}")
-                    elif prayer_time := dt_util.parse_time(value):
+                    elif prayer_time := dt_util.parse_time(str(value)):
                         _LOGGER.debug(f"Parsed prayer time: {key} = {prayer_time}")
                         prayer_datetime = datetime.combine(datetime.now().date(), prayer_time)
                         _LOGGER.debug(f"Parsed prayer time: {key} = {prayer_datetime}")
                         prayer_datetime_utc = dt_util.as_utc(prayer_datetime)
                         _LOGGER.debug(f"Converted prayer time to UTC: {key} = {prayer_datetime_utc}")
-                        prayer_times_info[key] = prayer_datetime_utc
+                        prayer_times_info[str(key)] = prayer_datetime_utc
                     else:
                         _LOGGER.warning(f"Skipping invalid prayer time: {key} = {day_data[key]}")
         return prayer_times_info

@@ -78,6 +78,16 @@ SENSOR_TYPES: tuple[SensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.TIMESTAMP,
     ),
     SensorEntityDescription(
+        key="jumuah_1",
+        name="Jumuah 1",
+        device_class=SensorDeviceClass.TIMESTAMP,
+    ),
+    SensorEntityDescription(
+        key="jumuah_2",
+        name="Jumuah 2",
+        device_class=SensorDeviceClass.TIMESTAMP,
+    ),
+    SensorEntityDescription(
         key=HIJRI_DATE_KEY,
         name="Hijri Date",
         device_class=None,
@@ -122,6 +132,6 @@ class PrayerTimeSensor(
         )
 
     @property
-    def native_value(self) -> Union[datetime, str]:
+    def native_value(self) -> Union[datetime, str, None]:
         """Return the state of the sensor."""
-        return self.coordinator.data[self.entity_description.key]
+        return self.coordinator.data.get(self.entity_description.key)
