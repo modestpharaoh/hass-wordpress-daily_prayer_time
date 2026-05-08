@@ -19,8 +19,6 @@ PRAYER_TIME_KEYS: Final = [
     "maghrib_jamah",
     "isha_begins",
     "isha_jamah",
-    "jumuah_1",
-    "jumuah_2",
 ]
 
 CONF_ENDPOINT: Final = "endpoint"

@@ -78,16 +78,6 @@ SENSOR_TYPES: tuple[SensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.TIMESTAMP,
     ),
     SensorEntityDescription(
-        key="jumuah_1",
-        name="Jumuah 1",
-        device_class=SensorDeviceClass.TIMESTAMP,
-    ),
-    SensorEntityDescription(
-        key="jumuah_2",
-        name="Jumuah 2",
-        device_class=SensorDeviceClass.TIMESTAMP,
-    ),
-    SensorEntityDescription(
         key=HIJRI_DATE_KEY,
         name="Hijri Date",
         device_class=None,
@@ -103,10 +93,43 @@ async def async_setup_entry(
 
     coordinator = config_entry.runtime_data
     _LOGGER.debug("Setting up sensor with coordinator: %s", coordinator)
-    async_add_entities(
-        PrayerTimeSensor(coordinator, description)
-        for description in SENSOR_TYPES
-    )
+    
+    entities = []
+    
+    # Add static sensors
+    for description in SENSOR_TYPES:
+        entities.append(PrayerTimeSensor(coordinator, description))
+        
+    # Add dynamic Jumuah sensors
+    for key in coordinator.data:
+        if key.startswith("jumuah_"):
+            parts = key.split("_")
+            if len(parts) >= 2:
+                num = parts[1]
+                if key.endswith("_label"):
+                    entities.append(
+                        PrayerTimeSensor(
+                            coordinator,
+                            SensorEntityDescription(
+                                key=key,
+                                name=f"Jumuah {num} Label",
+                                device_class=None,
+                            ),
+                        )
+                    )
+                else:
+                    entities.append(
+                        PrayerTimeSensor(
+                            coordinator,
+                            SensorEntityDescription(
+                                key=key,
+                                name=f"Jumuah {num}",
+                                device_class=SensorDeviceClass.TIMESTAMP,
+                            ),
+                        )
+                    )
+            
+    async_add_entities(entities)
 
 
 class PrayerTimeSensor(

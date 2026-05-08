@@ -117,21 +117,22 @@ class PrayerTimeCoordinator(DataUpdateCoordinator):
                         
                     if "jumuah" in today_dict and isinstance(today_dict["jumuah"], list):
                         jumuah_list = today_dict["jumuah"]
+                        jumuah_labels = today_dict.get("jumuah_label", [])
                         now = datetime.now()
                         days_ahead = (4 - now.weekday()) % 7
                         target_date = now.date() + timedelta(days=days_ahead)
                         
-                        if len(jumuah_list) > 0 and jumuah_list[0]:
-                            parsed_time = dt_util.parse_time(jumuah_list[0])
-                            if parsed_time:
-                                dt = datetime.combine(target_date, parsed_time)
-                                prayer_times_info["jumuah_1"] = dt_util.as_utc(dt)
-                                
-                        if len(jumuah_list) > 1 and jumuah_list[1]:
-                            parsed_time = dt_util.parse_time(jumuah_list[1])
-                            if parsed_time:
-                                dt = datetime.combine(target_date, parsed_time)
-                                prayer_times_info["jumuah_2"] = dt_util.as_utc(dt)
+                        for i, jumuah_time in enumerate(jumuah_list):
+                            if jumuah_time:
+                                parsed_time = dt_util.parse_time(jumuah_time)
+                                if parsed_time:
+                                    dt = datetime.combine(target_date, parsed_time)
+                                    key = f"jumuah_{i+1}"
+                                    prayer_times_info[key] = dt_util.as_utc(dt)
+                                    
+                                    if isinstance(jumuah_labels, list) and len(jumuah_labels) > i:
+                                        label_key = f"jumuah_{i+1}_label"
+                                        prayer_times_info[label_key] = jumuah_labels[i]
         except Exception as err:
             _LOGGER.warning(f"Failed to fetch today's extra data: {err}")
         
