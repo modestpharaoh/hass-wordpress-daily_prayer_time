@@ -47,6 +47,8 @@ class PrayerTimeCoordinator(DataUpdateCoordinator):
         self.yearendpoint = f"{base_endpoint}?filter=year"
         self.todayendpoint = f"{base_endpoint}?filter=today"
         self.hass = hass
+        self.jamaha_duration = 10
+        self.jummah_duration = 25
         # Extract main domain from endpoint
         parsed_url = urlparse(endpoint)
         self.website = parsed_url.netloc.split(":")[0]  # Remove port if present

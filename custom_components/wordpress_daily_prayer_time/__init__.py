@@ -15,7 +15,7 @@ from .coordinator import (
 )
 from .const import CONF_ENDPOINT, CONF_API_PATH
 
-PLATFORMS = [Platform.SENSOR]
+PLATFORMS = [Platform.SENSOR, Platform.NUMBER]
 
 _LOGGER = logging.getLogger(__name__)
 

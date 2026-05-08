@@ -1,7 +1,8 @@
 """Sensor platform for WordPress Daily Prayer Time integration."""
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Union
+from homeassistant.util import dt as dt_util
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
@@ -148,6 +149,27 @@ SENSOR_TYPES: tuple[SensorEntityDescription, ...] = (
         name="Hijri Date",
         device_class=None,
     ),
+    SensorEntityDescription(
+        key="next_event_name",
+        name="Next",
+        device_class=None,
+    ),
+    SensorEntityDescription(
+        key="next_event_in",
+        name="Next In",
+        device_class=None,
+    ),
+    SensorEntityDescription(
+        key="next_event_datetime",
+        name="Next Datetime",
+        device_class=SensorDeviceClass.TIMESTAMP,
+    ),
+    SensorEntityDescription(
+        key="next_event_time",
+        name="Next Time",
+        device_class=None,
+        icon="mdi:clock-digital",
+    ),
 )
 
 async def async_setup_entry(
@@ -219,8 +241,133 @@ class PrayerTimeSensor(
             name=coordinator.website_name,
             entry_type=DeviceEntryType.SERVICE,
         )
+        if description.key.startswith("next_event_"):
+            self._attr_should_poll = True
 
     @property
     def native_value(self) -> Union[datetime, str, None]:
         """Return the state of the sensor."""
+        if self.entity_description.key.startswith("next_event_"):
+            return self._calculate_next_event(self.entity_description.key)
         return self.coordinator.data.get(self.entity_description.key)
+
+    def _calculate_next_event(self, key: str) -> Union[datetime, str, None]:
+        """Calculate the next prayer/iqamah/sunrise event."""
+        now = dt_util.now()
+        today_is_friday = now.weekday() == 4
+        
+        # Get durations from coordinator
+        jamaha_duration = self.coordinator.jamaha_duration
+        jummah_duration = self.coordinator.jummah_duration
+        
+        events = []
+        active_key = None
+        active_dt = None
+        
+        for k, v in self.coordinator.data.items():
+            if not isinstance(v, datetime):
+                continue
+                
+            # Filter based on key and day
+            if today_is_friday:
+                if k in ["zuhr_begins", "zuhr_jamah"]:
+                    continue
+            else:
+                if k.startswith("jumuah_") and not k.endswith("_label"):
+                    continue
+                    
+            # Skip keys that are not prayer times or sunrise
+            if k in [
+                "fajr_begins", "fajr_jamah", "sunrise",
+                "zuhr_begins", "zuhr_jamah",
+                "asr_mithl_1", "asr_jamah",
+                "maghrib_begins", "maghrib_jamah",
+                "isha_begins", "isha_jamah"
+            ] or (k.startswith("jumuah_") and not k.endswith("_label")):
+                
+                # Check for active event (quiet period)
+                duration = None
+                if k.endswith("_jamah"):
+                    duration = timedelta(minutes=jamaha_duration)
+                elif k.startswith("jumuah_") and not k.endswith("_label"):
+                    duration = timedelta(minutes=jummah_duration)
+                    
+                if duration and v <= now < v + duration:
+                    active_key = k
+                    active_dt = v
+                
+                if v > now:
+                    events.append((k, v))
+                    
+        # Sort by time
+        events.sort(key=lambda x: x[1])
+        
+        # Handle active event overrides
+        if active_key and key in ["next_event_name", "next_event_in"]:
+            if key == "next_event_name":
+                if active_key.endswith("_jamah"):
+                    prayer_map = {
+                        "fajr": "Fajr",
+                        "zuhr": "Dhuhr",
+                        "asr": "Asr",
+                        "maghrib": "Maghrib",
+                        "isha": "Isha"
+                    }
+                    prayer = prayer_map.get(active_key.split("_")[0], active_key.split("_")[0].capitalize())
+                    return f"{prayer} Jamaha"
+                elif active_key.startswith("jumuah_"):
+                    parts = active_key.split("_")
+                    num = parts[1]
+                    return f"Jummah Khutba {num}"
+            elif key == "next_event_in":
+                return "Keep quiet, please!"
+                
+        # Fallback to standard logic if no active event or for other keys
+        if not events:
+            return None
+            
+        next_key, next_dt = events[0]
+        
+        if key == "next_event_name":
+            mapping = {
+                "fajr_begins": "Fajr",
+                "fajr_jamah": "Fajr Iqamah",
+                "sunrise": "Sunrise",
+                "zuhr_begins": "Dhuhr",
+                "zuhr_jamah": "Dhuhr Iqamah",
+                "asr_mithl_1": "Asr",
+                "asr_jamah": "Asr Iqamah",
+                "maghrib_begins": "Maghrib",
+                "maghrib_jamah": "Maghrib Iqamah",
+                "isha_begins": "Isha",
+                "isha_jamah": "Isha Iqamah",
+            }
+            if next_key.startswith("jumuah_"):
+                parts = next_key.split("_")
+                num = parts[1]
+                return f"Jumuah {num}"
+            return mapping.get(next_key, next_key)
+            
+        elif key == "next_event_in":
+            diff = next_dt - now
+            seconds = diff.total_seconds()
+            minutes = int(seconds / 60)
+            hours = int(seconds / 3600)
+            
+            if hours >= 2:
+                return f"In {hours} hours"
+            elif hours == 1:
+                return "In 1 hour"
+            elif minutes >= 1:
+                return f"in {minutes} minutes"
+            else:
+                return "In less than a minute"
+                
+        elif key == "next_event_datetime":
+            return next_dt
+            
+        elif key == "next_event_time":
+            local_dt = dt_util.as_local(next_dt)
+            return local_dt.strftime("%H:%M")
+            
+        return None

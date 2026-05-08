@@ -30,6 +30,10 @@ PRAYER_TIME_KEYS: Final = [
     "maghrib_jamah_time",
     "isha_begins_time",
     "isha_jamah_time",
+    "next_event_name",
+    "next_event_in",
+    "next_event_datetime",
+    "next_event_time",
 ]
 
 CONF_ENDPOINT: Final = "endpoint"
