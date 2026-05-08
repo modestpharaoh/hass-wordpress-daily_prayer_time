@@ -19,6 +19,17 @@ PRAYER_TIME_KEYS: Final = [
     "maghrib_jamah",
     "isha_begins",
     "isha_jamah",
+    "fajr_begins_time",
+    "fajr_jamah_time",
+    "sunrise_time",
+    "zuhr_begins_time",
+    "zuhr_jamah_time",
+    "asr_mithl_1_time",
+    "asr_jamah_time",
+    "maghrib_begins_time",
+    "maghrib_jamah_time",
+    "isha_begins_time",
+    "isha_jamah_time",
 ]
 
 CONF_ENDPOINT: Final = "endpoint"

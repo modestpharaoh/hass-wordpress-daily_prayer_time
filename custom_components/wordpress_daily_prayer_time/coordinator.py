@@ -226,6 +226,9 @@ class PrayerTimeCoordinator(DataUpdateCoordinator):
                         prayer_datetime_utc = dt_util.as_utc(prayer_datetime)
                         _LOGGER.debug(f"Converted prayer time to UTC: {key} = {prayer_datetime_utc}")
                         prayer_times_info[str(key)] = prayer_datetime_utc
+                        
+                        # Add human readable time in HH:MM format
+                        prayer_times_info[f"{key}_time"] = str(value)[:5]
                     else:
                         _LOGGER.warning(f"Skipping invalid prayer time: {key} = {day_data[key]}")
         return prayer_times_info
