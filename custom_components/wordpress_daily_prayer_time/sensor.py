@@ -227,6 +227,7 @@ async def async_setup_entry(
                                 key=key,
                                 name=f"Jumuah {num} Label",
                                 device_class=None,
+                                icon="mdi:mosque-outline",
                             ),
                         )
                     )
@@ -238,6 +239,7 @@ async def async_setup_entry(
                                 key=key,
                                 name=f"Jumuah {num}",
                                 device_class=SensorDeviceClass.TIMESTAMP,
+                                icon="mdi:mosque",
                             ),
                         )
                     )
