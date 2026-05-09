@@ -4,7 +4,7 @@
 
 
   [![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg?style=for-the-badge)](https://hacs.xyz/)
-  ![Version](https://img.shields.io/badge/version-1.1.0-orange.svg?style=for-the-badge)
+  ![Version](https://img.shields.io/badge/version-2.0.0-orange.svg?style=for-the-badge)
   ![Home Assistant](https://img.shields.io/badge/Home_Assistant-2024.3+-blue.svg?style=for-the-badge&logo=home-assistant)
   [![Maintainer](https://img.shields.io/badge/maintainer-%40modestpharaoh-blue.svg?style=for-the-badge)](https://github.com/modestpharaoh)
 </div>
