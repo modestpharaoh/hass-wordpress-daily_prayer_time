@@ -1,11 +1,18 @@
 {
   "domain": "wordpress_daily_prayer_time",
   "name": "WordPress Daily Prayer Time",
-  "codeowners": ["@modestpharaoh"],
+  "codeowners": [
+    "@modestpharaoh"
+  ],
   "config_flow": true,
   "documentation": "https://github.com/modestpharaoh/hass-wordpress-daily_prayer_time",
   "iot_class": "cloud_polling",
-  "loggers": ["wordpress_daily_prayer_time"],
-  "requirements": ["aiohttp", "aiofiles"],
-  "version": "1.1.0"
+  "loggers": [
+    "wordpress_daily_prayer_time"
+  ],
+  "requirements": [
+    "aiohttp",
+    "aiofiles"
+  ],
+  "version": "2.0.0"
 }
