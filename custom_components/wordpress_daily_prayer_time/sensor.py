@@ -316,12 +316,11 @@ class PrayerTimeSensor(
                         
         return self.coordinator.data.get(key)
 
-    def _calculate_next_event(self, key: str) -> Union[datetime, str, None]:
-        """Calculate the next prayer/iqamah/sunrise event."""
+    def _get_upcoming_events(self) -> tuple[list[tuple[str, datetime]], str | None, datetime | None]:
+        """Get upcoming events and active event."""
         now = dt_util.now()
         today_is_friday = now.weekday() == 4
         
-        # Get durations from coordinator
         jamaha_duration = self.coordinator.jamaha_duration
         jummah_duration = self.coordinator.jummah_duration
         
@@ -364,8 +363,13 @@ class PrayerTimeSensor(
                 if v > now:
                     events.append((k, v))
                     
-        # Sort by time
         events.sort(key=lambda x: x[1])
+        return events, active_key, active_dt
+
+    def _calculate_next_event(self, key: str) -> Union[datetime, str, None]:
+        """Calculate the next prayer/iqamah/sunrise event."""
+        events, active_key, active_dt = self._get_upcoming_events()
+        now = dt_util.now()
         
         # Handle active event overrides
         if active_key and key in ["next_event_name", "next_event_in"]:
@@ -440,10 +444,16 @@ class PrayerTimeSensor(
     @property
     def icon(self) -> str | None:
         """Return the icon to use in the frontend."""
-        if self.entity_description.key == "next_prayer_compact":
+        key = self.entity_description.key
+        
+        if key == "next_prayer_compact":
             return self._get_compact_icon(is_next=True)
-        elif self.entity_description.key == "current_prayer_compact":
+        elif key == "current_prayer_compact":
             return self._get_compact_icon(is_next=False)
+            
+        if key.startswith("next_event_"):
+            return self._get_next_event_icon()
+            
         return self.entity_description.icon
 
     def _get_compact_icon(self, is_next: bool) -> str | None:
@@ -480,6 +490,24 @@ class PrayerTimeSensor(
                     return desc.icon
                     
         return "mdi:mosque-outline"
+
+    def _get_next_event_icon(self) -> str | None:
+        """Get icon for next event sensors."""
+        events, active_key, _ = self._get_upcoming_events()
+        
+        target_key = None
+        if active_key:
+            target_key = active_key
+        elif events:
+            target_key = events[0][0]
+            
+        if target_key:
+            for desc in SENSOR_TYPES:
+                if desc.key == target_key:
+                    return desc.icon
+                    
+        return "mdi:mosque-outline"
+
 
     def _calculate_compact_sensor(self, key: str) -> Union[str, None]:
         """Calculate compact sensor value."""
