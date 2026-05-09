@@ -214,9 +214,10 @@ class PrayerTimeCoordinator(DataUpdateCoordinator):
         for day_data in data[0]:
             if day_data["d_date"] == today:
                 _LOGGER.info(f"Parsed Prayer for today: {day_data}")
-                # return day_data
+                
+                # Process today's data
                 for key, value in day_data.items():
-                    if key in ["d_date"]:
+                    if key in ["d_date", "tomorrow"]:
                         continue
                     elif key == "hijri_date":
                         prayer_times_info[str(key)] = day_data[key]
@@ -224,15 +225,33 @@ class PrayerTimeCoordinator(DataUpdateCoordinator):
                     elif prayer_time := dt_util.parse_time(str(value)):
                         _LOGGER.debug(f"Parsed prayer time: {key} = {prayer_time}")
                         prayer_datetime = datetime.combine(datetime.now().date(), prayer_time)
-                        _LOGGER.debug(f"Parsed prayer time: {key} = {prayer_datetime}")
                         prayer_datetime_utc = dt_util.as_utc(prayer_datetime)
-                        _LOGGER.debug(f"Converted prayer time to UTC: {key} = {prayer_datetime_utc}")
                         prayer_times_info[str(key)] = prayer_datetime_utc
                         
                         # Add human readable time in HH:MM format
                         prayer_times_info[f"{key}_time"] = str(value)[:5]
                     else:
                         _LOGGER.warning(f"Skipping invalid prayer time: {key} = {day_data[key]}")
+                        
+                # Process tomorrow's data if available
+                if "tomorrow" in day_data and isinstance(day_data["tomorrow"], dict):
+                    tomorrow_data = day_data["tomorrow"]
+                    _LOGGER.info(f"Parsed Prayer for tomorrow: {tomorrow_data}")
+                    tomorrow_dt = datetime.now().date() + timedelta(days=1)
+                    
+                    for key, value in tomorrow_data.items():
+                        if key in ["d_date"]:
+                            continue
+                        elif key == "hijri_date":
+                            prayer_times_info[f"tomorrow_{key}"] = value
+                        elif prayer_time := dt_util.parse_time(str(value)):
+                            prayer_datetime = datetime.combine(tomorrow_dt, prayer_time)
+                            prayer_datetime_utc = dt_util.as_utc(prayer_datetime)
+                            prayer_times_info[f"tomorrow_{key}"] = prayer_datetime_utc
+                            
+                            # Add human readable time in HH:MM format
+                            prayer_times_info[f"tomorrow_{key}_time"] = str(value)[:5]
+                            
         return prayer_times_info
 
     def _random_time_after_midnight(self) -> datetime:

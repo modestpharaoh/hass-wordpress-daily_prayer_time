@@ -183,8 +183,17 @@ SENSOR_TYPES: tuple[SensorEntityDescription, ...] = (
         key="next_event_time",
         name="Next Time",
         device_class=None,
-        icon="mdi:clock-digital",
         icon="mdi:mosque-outline",
+    ),
+    SensorEntityDescription(
+        key="next_prayer_compact",
+        name="Next Prayer Compact",
+        device_class=None,
+    ),
+    SensorEntityDescription(
+        key="current_prayer_compact",
+        name="Current Prayer Compact",
+        device_class=None,
     ),
 )
 
@@ -257,15 +266,55 @@ class PrayerTimeSensor(
             name=coordinator.website_name,
             entry_type=DeviceEntryType.SERVICE,
         )
-        if description.key.startswith("next_event_"):
+        if description.key.startswith("next_event_") or description.key.endswith("_compact"):
             self._attr_should_poll = True
+    async def async_added_to_hass(self) -> None:
+        """Handle entity which will be added."""
+        await super().async_added_to_hass()
+        
+        if self.entity_description.key.startswith("next_event_") or self.entity_description.key.endswith("_compact"):
+            from homeassistant.helpers.event import async_track_time_interval
+            self._timer_unsub = async_track_time_interval(
+                self.hass,
+                self._async_update_state,
+                timedelta(minutes=1),
+            )
+            
+    async def _async_update_state(self, now: datetime) -> None:
+        """Update state."""
+        self.async_write_ha_state()
+
+    async def async_will_remove_from_hass(self) -> None:
+        """Run when entity will be removed from hass."""
+        await super().async_will_remove_from_hass()
+        if hasattr(self, "_timer_unsub"):
+            self._timer_unsub()
 
     @property
     def native_value(self) -> Union[datetime, str, None]:
         """Return the state of the sensor."""
-        if self.entity_description.key.startswith("next_event_"):
-            return self._calculate_next_event(self.entity_description.key)
-        return self.coordinator.data.get(self.entity_description.key)
+        key = self.entity_description.key
+        
+        if key.startswith("next_event_"):
+            return self._calculate_next_event(key)
+            
+        if key.endswith("_compact"):
+            return self._calculate_compact_sensor(key)
+            
+        # Standard sensors rollover logic
+        now = dt_util.now()
+        isha_jamah = self.coordinator.data.get("isha_jamah")
+        
+        if isha_jamah and isinstance(isha_jamah, datetime):
+            if now > isha_jamah:
+                # After Isha Iqamah
+                # Exception: Isha sensors still show current date until midnight
+                if key not in ["isha_begins", "isha_jamah", "isha_begins_time", "isha_jamah_time"] or now.date() > isha_jamah.date():
+                    tomorrow_key = f"tomorrow_{key}"
+                    if tomorrow_key in self.coordinator.data:
+                        return self.coordinator.data.get(tomorrow_key)
+                        
+        return self.coordinator.data.get(key)
 
     def _calculate_next_event(self, key: str) -> Union[datetime, str, None]:
         """Calculate the next prayer/iqamah/sunrise event."""
@@ -385,5 +434,113 @@ class PrayerTimeSensor(
         elif key == "next_event_time":
             local_dt = dt_util.as_local(next_dt)
             return local_dt.strftime("%H:%M")
+            
+        return None
+
+    @property
+    def icon(self) -> str | None:
+        """Return the icon to use in the frontend."""
+        if self.entity_description.key == "next_prayer_compact":
+            return self._get_compact_icon(is_next=True)
+        elif self.entity_description.key == "current_prayer_compact":
+            return self._get_compact_icon(is_next=False)
+        return self.entity_description.icon
+
+    def _get_compact_icon(self, is_next: bool) -> str | None:
+        """Get icon for compact sensors."""
+        now = dt_util.now()
+        main_keys = ["fajr_begins", "sunrise", "zuhr_begins", "asr_mithl_1", "maghrib_begins", "isha_begins"]
+        events = []
+        for k in main_keys:
+            v = self.coordinator.data.get(k)
+            if isinstance(v, datetime):
+                events.append((k, v))
+        events.sort(key=lambda x: x[1])
+        
+        if not events:
+            return "mdi:mosque-outline"
+            
+        target_key = None
+        if is_next:
+            for k, v in events:
+                if v > now:
+                    target_key = k
+                    break
+        else:
+            for k, v in reversed(events):
+                if v <= now:
+                    target_key = k
+                    break
+            if not target_key:
+                target_key = events[-1][0] # Fallback to Isha
+                
+        if target_key:
+            for desc in SENSOR_TYPES:
+                if desc.key == target_key:
+                    return desc.icon
+                    
+        return "mdi:mosque-outline"
+
+    def _calculate_compact_sensor(self, key: str) -> Union[str, None]:
+        """Calculate compact sensor value."""
+        now = dt_util.now()
+        main_keys = ["fajr_begins", "sunrise", "zuhr_begins", "asr_mithl_1", "maghrib_begins", "isha_begins"]
+        
+        events = []
+        for k in main_keys:
+            v = self.coordinator.data.get(k)
+            if isinstance(v, datetime):
+                events.append((k, v))
+                
+        events.sort(key=lambda x: x[1])
+        
+        if not events:
+            return None
+            
+        short_names = {
+            "fajr_begins": "Fajr",
+            "sunrise": "Sunr",
+            "zuhr_begins": "Zuhr",
+            "asr_mithl_1": "Asr",
+            "maghrib_begins": "Mgrb",
+            "isha_begins": "Isha"
+        }
+        
+        if key == "next_prayer_compact":
+            next_event = None
+            for k, v in events:
+                if v > now:
+                    next_event = (k, v)
+                    break
+                    
+            if not next_event:
+                return None
+                
+            k, v = next_event
+            short_name = short_names.get(k, k)
+            local_dt = dt_util.as_local(v)
+            time_str = local_dt.strftime("%H:%M")
+            return f"{short_name}: {time_str}"
+            
+        elif key == "current_prayer_compact":
+            current_event = None
+            for k, v in reversed(events):
+                if v <= now:
+                    current_event = (k, v)
+                    break
+                    
+            if not current_event:
+                # Fallback to last event of day
+                k, v = events[-1]
+                short_name = short_names.get(k, k)
+                local_dt = dt_util.as_local(v)
+                time_str = local_dt.strftime("%H:%M")
+                return f"{short_name}: {time_str}"
+                
+            k, v = current_event
+            short_name = short_names.get(k, k)
+            local_dt = dt_util.as_local(v)
+            time_str = local_dt.strftime("%H:%M")
+            return f"{short_name}: {time_str}"
             
         return None
