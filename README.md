@@ -17,10 +17,14 @@ This is a custom Home Assistant integration that fetches daily prayer times (Ath
 
 - 🕋 **Complete Prayer Schedule**: Fetches Fajr, Sunrise, Dhuhr, Asr, Maghrib, and Isha (both Athan and Iqamah).
 - 📅 **Dual Calendar Support**: Displays current **Hijri Date** directly within Home Assistant.
-- 🕌 **Special Jumuah Sensors**: Automatically tracks Jumuah 1 and Jumuah 2 prayer times for the upcoming Friday.
-- 🔄 **Smart Refresh**: Updates schedules automatically every day shortly after midnight.
+- 🕌 **Dynamic Jumuah Sensors**: Automatically tracks an arbitrary number of Jumuah times and labels for the upcoming Friday.
+- 🕒 **Human-Readable Times**: Provides both timestamp sensors and simple `HH:MM` string sensors for all events.
+- ⏱️ **Next Event Tracking**: Real-time sensors for `Next` event name, `Next In` countdown, `Next Datetime`, and `Next Time`.
+- 🤫 **Quiet Period Overrides**: Automatically shows "Keep quiet, please!" and `<Prayer> Jamaha` during active Iqamah/Khutba times.
+- 🔄 **Smart Refresh & Rollover**: Updates schedules automatically every day shortly after midnight. Sensors automatically rollover to show tomorrow's data after Isha Iqamah.
+- 📊 **Compact Sensors**: Combined `Current` and `Next` prayer sensors with dynamic icons for clean dashboards.
 - 📂 **Offline Fallback**: Downloads the full year's schedule to your config directory; if your mosque's site is offline, it falls back to the local database.
-- ⚙️ **Easy Setup**: Full UI-based configuration (No YAML required!).
+- ⚙️ **Easy Setup & Configuration**: Full UI-based configuration with native Number entities to adjust Jamaha/Jummah durations.
 
 ## 🚀 Installation
 
@@ -51,15 +55,11 @@ The easiest way to install and keep it updated.
 ## 📊 Sensors Created
 
 The integration provides the following sensors:
-- `sensor.fajr_prayer` & `sensor.fajr_iqamah`
-- `sensor.sunrise`
-- `sensor.dhuhr_prayer` & `sensor.dhuhr_iqamah`
-- `sensor.asr_prayer` & `sensor.asr_iqamah`
-- `sensor.maghrib_prayer` & `sensor.maghrib_iqamah`
-- `sensor.isha_prayer` & `sensor.isha_iqamah`
-- `sensor.hijri_date`
-- `sensor.jumuah_1`
-- `sensor.jumuah_2`
+- **Time Sensors**: `sensor.fajr_prayer` (Timestamp) & `sensor.fajr_begins_time` (HH:MM), etc.
+- **Next Event**: `sensor.next`, `sensor.next_in`, `sensor.next_datetime`, `sensor.next_time`
+- **Compact**: `sensor.current_prayer_compact`, `sensor.next_prayer_compact`
+- **Jumuah**: Dynamic sensors like `sensor.jumuah_1`, `sensor.jumuah_1_label`, etc.
+- **Calendar**: `sensor.hijri_date`
 
 ## 💬 Troubleshooting
 
