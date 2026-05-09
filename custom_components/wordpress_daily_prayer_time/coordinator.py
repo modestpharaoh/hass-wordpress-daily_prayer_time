@@ -217,7 +217,7 @@ class PrayerTimeCoordinator(DataUpdateCoordinator):
                 
                 # Process today's data
                 for key, value in day_data.items():
-                    if key in ["d_date", "tomorrow"]:
+                    if key in ["d_date", "tomorrow", "is_ramadan"]:
                         continue
                     elif key == "hijri_date":
                         prayer_times_info[str(key)] = day_data[key]
@@ -240,7 +240,7 @@ class PrayerTimeCoordinator(DataUpdateCoordinator):
                     tomorrow_dt = datetime.now().date() + timedelta(days=1)
                     
                     for key, value in tomorrow_data.items():
-                        if key in ["d_date"]:
+                        if key in ["d_date", "is_ramadan"]:
                             continue
                         elif key == "hijri_date":
                             prayer_times_info[f"tomorrow_{key}"] = value
