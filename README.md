@@ -56,6 +56,7 @@ The easiest way to install and keep it updated.
 
 The integration provides the following sensors:
 - **Time Sensors**: `sensor.fajr_prayer` (Timestamp) & `sensor.fajr_begins_time` (HH:MM), etc.
+- **Tomorrow Sensors**: `sensor.tomorrow_fajr_prayer` (Timestamp) & `sensor.tomorrow_fajr_time` (HH:MM), etc. for all prayer azan begins
 - **Next Event**: `sensor.next`, `sensor.next_in`, `sensor.next_datetime`, `sensor.next_time`
 - **Compact**: `sensor.current_prayer_compact`, `sensor.next_prayer_compact`
 - **Jumuah**: Dynamic sensors like `sensor.jumuah_1`, `sensor.jumuah_1_label`, etc.

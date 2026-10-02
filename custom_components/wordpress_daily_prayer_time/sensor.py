@@ -156,6 +156,66 @@ SENSOR_TYPES: tuple[SensorEntityDescription, ...] = (
         icon="mdi:weather-night",
     ),
     SensorEntityDescription(
+        key="tomorrow_fajr_begins",
+        name="Tomorrow Fajr Prayer",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        icon="mdi:theme-light-dark",
+    ),
+    SensorEntityDescription(
+        key="tomorrow_fajr_begins_time",
+        name="Tomorrow Fajr Time",
+        device_class=None,
+        icon="mdi:theme-light-dark",
+    ),
+    SensorEntityDescription(
+        key="tomorrow_zuhr_begins",
+        name="Tomorrow Dhuhr Prayer",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        icon="mdi:white-balance-sunny",
+    ),
+    SensorEntityDescription(
+        key="tomorrow_zuhr_begins_time",
+        name="Tomorrow Dhuhr Time",
+        device_class=None,
+        icon="mdi:white-balance-sunny",
+    ),
+    SensorEntityDescription(
+        key="tomorrow_asr_mithl_1",
+        name="Tomorrow Asr Prayer",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        icon="mdi:weather-sunny",
+    ),
+    SensorEntityDescription(
+        key="tomorrow_asr_mithl_1_time",
+        name="Tomorrow Asr Time",
+        device_class=None,
+        icon="mdi:weather-sunny",
+    ),
+    SensorEntityDescription(
+        key="tomorrow_maghrib_begins",
+        name="Tomorrow Maghrib Prayer",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        icon="mdi:weather-sunset-down",
+    ),
+    SensorEntityDescription(
+        key="tomorrow_maghrib_begins_time",
+        name="Tomorrow Maghrib Time",
+        device_class=None,
+        icon="mdi:weather-sunset-down",
+    ),
+    SensorEntityDescription(
+        key="tomorrow_isha_begins",
+        name="Tomorrow Isha Prayer",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        icon="mdi:weather-night",
+    ),
+    SensorEntityDescription(
+        key="tomorrow_isha_begins_time",
+        name="Tomorrow Isha Time",
+        device_class=None,
+        icon="mdi:weather-night",
+    ),
+    SensorEntityDescription(
         key=HIJRI_DATE_KEY,
         name="Hijri Date",
         device_class=None,
@@ -303,6 +363,19 @@ class PrayerTimeSensor(
         if key.endswith("_compact"):
             return self._calculate_compact_sensor(key)
             
+        if key.startswith("tomorrow_"):
+            val = self.coordinator.data.get(key)
+            if val is None:
+                if key == "tomorrow_asr_begins":
+                    val = self.coordinator.data.get("tomorrow_asr_mithl_1")
+                elif key == "tomorrow_asr_begins_time":
+                    val = self.coordinator.data.get("tomorrow_asr_mithl_1_time")
+                elif key == "tomorrow_asr_mithl_1":
+                    val = self.coordinator.data.get("tomorrow_asr_begins")
+                elif key == "tomorrow_asr_mithl_1_time":
+                    val = self.coordinator.data.get("tomorrow_asr_begins_time")
+            return val
+            
         # Standard sensors rollover logic
         now = dt_util.now()
         isha_jamah = self.coordinator.data.get("isha_jamah")
@@ -321,10 +394,18 @@ class PrayerTimeSensor(
     def _get_upcoming_events(self) -> tuple[list[tuple[str, datetime]], str | None, datetime | None]:
         """Get upcoming events and active event."""
         now = dt_util.now()
+        today_date = now.date()
+        tomorrow_date = today_date + timedelta(days=1)
         today_is_friday = now.weekday() == 4
+        tomorrow_is_friday = (now.weekday() + 1) % 7 == 4
         
         jamaha_duration = self.coordinator.jamaha_duration
         jummah_duration = self.coordinator.jummah_duration
+        
+        has_jumuah = any(
+            k.startswith("jumuah_") and not k.endswith("_label") and isinstance(v, datetime)
+            for k, v in self.coordinator.data.items()
+        )
         
         events = []
         active_key = None
@@ -334,37 +415,72 @@ class PrayerTimeSensor(
             if not isinstance(v, datetime):
                 continue
                 
-            # Filter based on key and day
-            if today_is_friday:
-                if k in ["zuhr_begins", "zuhr_jamah"]:
+            local_v = dt_util.as_local(v)
+            v_date = local_v.date()
+            
+            # Only consider events for today or tomorrow
+            if v_date < today_date or v_date > tomorrow_date:
+                continue
+                
+            is_event_for_today = (v_date == today_date)
+            is_event_for_tomorrow = (v_date == tomorrow_date)
+            
+            # Handle Jumuah vs Zuhr:
+            if k.startswith("jumuah_") and not k.endswith("_label"):
+                # Jumuah can ONLY be valid on a Friday
+                if local_v.weekday() != 4:
                     continue
-            else:
-                if k.startswith("jumuah_") and not k.endswith("_label"):
+                # If event is on Friday, it is only relevant if today is Friday or tomorrow is Friday
+                if not ((today_is_friday and is_event_for_today) or (tomorrow_is_friday and is_event_for_tomorrow)):
+                    continue
+            elif k in ["zuhr_begins", "zuhr_jamah"]:
+                # If today is Friday and Jumuah is present, skip today's Zuhr
+                if today_is_friday and has_jumuah:
+                    continue
+            elif k in ["tomorrow_zuhr_begins", "tomorrow_zuhr_jamah"]:
+                # If tomorrow is Friday and Jumuah is present, skip tomorrow's Zuhr
+                if tomorrow_is_friday and has_jumuah:
                     continue
                     
             # Skip keys that are not prayer times or sunrise
-            if k in [
+            valid_today_keys = [
                 "fajr_begins", "fajr_jamah", "sunrise",
                 "zuhr_begins", "zuhr_jamah",
                 "asr_mithl_1", "asr_jamah",
                 "maghrib_begins", "maghrib_jamah",
                 "isha_begins", "isha_jamah"
-            ] or (k.startswith("jumuah_") and not k.endswith("_label")):
+            ]
+            valid_tomorrow_keys = [
+                "tomorrow_fajr_begins", "tomorrow_fajr_jamah", "tomorrow_sunrise",
+                "tomorrow_zuhr_begins", "tomorrow_zuhr_jamah",
+                "tomorrow_asr_mithl_1", "tomorrow_asr_jamah",
+                "tomorrow_maghrib_begins", "tomorrow_maghrib_jamah",
+                "tomorrow_isha_begins", "tomorrow_isha_jamah"
+            ]
+            
+            is_valid_event = (
+                k in valid_today_keys
+                or k in valid_tomorrow_keys
+                or (k.startswith("jumuah_") and not k.endswith("_label"))
+            )
+            
+            if not is_valid_event:
+                continue
                 
-                # Check for active event (quiet period)
-                duration = None
-                if k.endswith("_jamah"):
-                    duration = timedelta(minutes=jamaha_duration)
-                elif k.startswith("jumuah_") and not k.endswith("_label"):
-                    duration = timedelta(minutes=jummah_duration)
-                    
-                if duration and v <= now < v + duration:
-                    active_key = k
-                    active_dt = v
+            # Check for active event (quiet period)
+            duration = None
+            if k.endswith("_jamah"):
+                duration = timedelta(minutes=jamaha_duration)
+            elif k.startswith("jumuah_") and not k.endswith("_label"):
+                duration = timedelta(minutes=jummah_duration)
                 
-                if v > now:
-                    events.append((k, v))
-                    
+            if duration and v <= now < v + duration:
+                active_key = k
+                active_dt = v
+                
+            if v > now:
+                events.append((k, v))
+                
         events.sort(key=lambda x: x[1])
         return events, active_key, active_dt
 
@@ -384,7 +500,8 @@ class PrayerTimeSensor(
                         "maghrib": "Maghrib",
                         "isha": "Isha"
                     }
-                    prayer = prayer_map.get(active_key.split("_")[0], active_key.split("_")[0].capitalize())
+                    clean_k = active_key.removeprefix("tomorrow_")
+                    prayer = prayer_map.get(clean_k.split("_")[0], clean_k.split("_")[0].capitalize())
                     return f"{prayer} Jamaha"
                 elif active_key.startswith("jumuah_"):
                     parts = active_key.split("_")
@@ -417,7 +534,8 @@ class PrayerTimeSensor(
                 parts = next_key.split("_")
                 num = parts[1]
                 return f"Jumuah {num}"
-            return mapping.get(next_key, next_key)
+            clean_key = next_key.removeprefix("tomorrow_")
+            return mapping.get(clean_key, clean_key)
             
         elif key == "next_event_in":
             diff = next_dt - now
@@ -461,12 +579,43 @@ class PrayerTimeSensor(
     def _get_compact_icon(self, is_next: bool) -> str | None:
         """Get icon for compact sensors."""
         now = dt_util.now()
-        main_keys = ["fajr_begins", "sunrise", "zuhr_begins", "asr_mithl_1", "maghrib_begins", "isha_begins"]
+        today_date = now.date()
+        tomorrow_date = today_date + timedelta(days=1)
+        today_is_friday = now.weekday() == 4
+        tomorrow_is_friday = (now.weekday() + 1) % 7 == 4
+        
+        has_jumuah = any(
+            k.startswith("jumuah_") and not k.endswith("_label") and isinstance(v, datetime)
+            for k, v in self.coordinator.data.items()
+        )
+        
+        compact_keys = [
+            "fajr_begins", "sunrise", "zuhr_begins", "asr_mithl_1", "maghrib_begins", "isha_begins",
+            "tomorrow_fajr_begins", "tomorrow_sunrise", "tomorrow_zuhr_begins",
+            "tomorrow_asr_mithl_1", "tomorrow_maghrib_begins", "tomorrow_isha_begins",
+            "jumuah_1"
+        ]
+        
         events = []
-        for k in main_keys:
+        for k in compact_keys:
             v = self.coordinator.data.get(k)
-            if isinstance(v, datetime):
-                events.append((k, v))
+            if not isinstance(v, datetime):
+                continue
+            local_v = dt_util.as_local(v)
+            v_date = local_v.date()
+            if v_date < today_date or v_date > tomorrow_date:
+                continue
+            # Jumuah vs Zuhr rules
+            if k == "jumuah_1":
+                if local_v.weekday() != 4:
+                    continue
+                if not ((today_is_friday and v_date == today_date) or (tomorrow_is_friday and v_date == tomorrow_date)):
+                    continue
+            elif k in ["zuhr_begins", "tomorrow_zuhr_begins"]:
+                if v_date.weekday() == 4 and has_jumuah:
+                    continue
+            events.append((k, v))
+                    
         events.sort(key=lambda x: x[1])
         
         if not events:
@@ -484,11 +633,14 @@ class PrayerTimeSensor(
                     target_key = k
                     break
             if not target_key:
-                target_key = events[-1][0] # Fallback to Isha
+                target_key = "isha_begins"
                 
         if target_key:
+            if target_key.startswith("jumuah_"):
+                return "mdi:mosque"
+            clean_key = target_key.removeprefix("tomorrow_")
             for desc in SENSOR_TYPES:
-                if desc.key == target_key:
+                if desc.key == clean_key:
                     return desc.icon
                     
         return "mdi:mosque-outline"
@@ -504,8 +656,11 @@ class PrayerTimeSensor(
             target_key = events[0][0]
             
         if target_key:
+            if target_key.startswith("jumuah_"):
+                return "mdi:mosque"
+            clean_key = target_key.removeprefix("tomorrow_")
             for desc in SENSOR_TYPES:
-                if desc.key == target_key:
+                if desc.key == clean_key:
                     return desc.icon
                     
         return "mdi:mosque-outline"
@@ -514,28 +669,63 @@ class PrayerTimeSensor(
     def _calculate_compact_sensor(self, key: str) -> Union[str, None]:
         """Calculate compact sensor value."""
         now = dt_util.now()
-        main_keys = ["fajr_begins", "sunrise", "zuhr_begins", "asr_mithl_1", "maghrib_begins", "isha_begins"]
+        today_date = now.date()
+        tomorrow_date = today_date + timedelta(days=1)
+        today_is_friday = now.weekday() == 4
+        tomorrow_is_friday = (now.weekday() + 1) % 7 == 4
         
-        events = []
-        for k in main_keys:
-            v = self.coordinator.data.get(k)
-            if isinstance(v, datetime):
-                events.append((k, v))
-                
-        events.sort(key=lambda x: x[1])
+        has_jumuah = any(
+            k.startswith("jumuah_") and not k.endswith("_label") and isinstance(v, datetime)
+            for k, v in self.coordinator.data.items()
+        )
         
-        if not events:
-            return None
-            
         short_names = {
             "fajr_begins": "Fajr",
             "sunrise": "Sunr",
             "zuhr_begins": "Zuhr",
             "asr_mithl_1": "Asr",
             "maghrib_begins": "Mgrb",
-            "isha_begins": "Isha"
+            "isha_begins": "Isha",
         }
         
+        compact_keys = [
+            "fajr_begins", "sunrise", "zuhr_begins", "asr_mithl_1", "maghrib_begins", "isha_begins",
+            "tomorrow_fajr_begins", "tomorrow_sunrise", "tomorrow_zuhr_begins",
+            "tomorrow_asr_mithl_1", "tomorrow_maghrib_begins", "tomorrow_isha_begins",
+            "jumuah_1"
+        ]
+        
+        events = []
+        for k in compact_keys:
+            v = self.coordinator.data.get(k)
+            if not isinstance(v, datetime):
+                continue
+            local_v = dt_util.as_local(v)
+            v_date = local_v.date()
+            if v_date < today_date or v_date > tomorrow_date:
+                continue
+            # Jumuah vs Zuhr rules
+            if k == "jumuah_1":
+                if local_v.weekday() != 4:
+                    continue
+                if not ((today_is_friday and v_date == today_date) or (tomorrow_is_friday and v_date == tomorrow_date)):
+                    continue
+            elif k in ["zuhr_begins", "tomorrow_zuhr_begins"]:
+                if v_date.weekday() == 4 and has_jumuah:
+                    continue
+            events.append((k, v))
+                    
+        events.sort(key=lambda x: x[1])
+        
+        if not events:
+            return None
+            
+        def _get_short_name(k: str) -> str:
+            if k.startswith("jumuah_"):
+                return "Jumh"
+            clean_k = k.removeprefix("tomorrow_")
+            return short_names.get(clean_k, clean_k[:4].capitalize())
+            
         if key == "next_prayer_compact":
             next_event = None
             for k, v in events:
@@ -547,10 +737,10 @@ class PrayerTimeSensor(
                 return None
                 
             k, v = next_event
-            short_name = short_names.get(k, k)
+            name = _get_short_name(k)
             local_dt = dt_util.as_local(v)
             time_str = local_dt.strftime("%H:%M")
-            return f"{short_name}: {time_str}"
+            return f"{name}: {time_str}"
             
         elif key == "current_prayer_compact":
             current_event = None
@@ -560,17 +750,20 @@ class PrayerTimeSensor(
                     break
                     
             if not current_event:
-                # Fallback to last event of day
+                # Fallback to Isha (previous prayer before Fajr)
+                isha = self.coordinator.data.get("isha_begins")
+                if isinstance(isha, datetime):
+                    local_dt = dt_util.as_local(isha)
+                    return f"Isha: {local_dt.strftime('%H:%M')}"
                 k, v = events[-1]
-                short_name = short_names.get(k, k)
+                name = _get_short_name(k)
                 local_dt = dt_util.as_local(v)
-                time_str = local_dt.strftime("%H:%M")
-                return f"{short_name}: {time_str}"
+                return f"{name}: {local_dt.strftime('%H:%M')}"
                 
             k, v = current_event
-            short_name = short_names.get(k, k)
+            name = _get_short_name(k)
             local_dt = dt_util.as_local(v)
             time_str = local_dt.strftime("%H:%M")
-            return f"{short_name}: {time_str}"
+            return f"{name}: {time_str}"
             
         return None
