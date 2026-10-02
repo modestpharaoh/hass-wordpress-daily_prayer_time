@@ -116,11 +116,13 @@ class PrayerTimeCoordinator(DataUpdateCoordinator):
                     today_dict = _extract(today_data_raw)
                     if "hijri_date_convert" in today_dict:
                         prayer_times_info["hijri_date"] = today_dict["hijri_date_convert"]
+                    elif "hijri_date" in today_dict and "hijri_date" not in prayer_times_info:
+                        prayer_times_info["hijri_date"] = today_dict["hijri_date"]
                         
                     if "jumuah" in today_dict and isinstance(today_dict["jumuah"], list):
                         jumuah_list = today_dict["jumuah"]
                         jumuah_labels = today_dict.get("jumuah_label", [])
-                        now = datetime.now()
+                        now = dt_util.now()
                         days_ahead = (4 - now.weekday()) % 7
                         target_date = now.date() + timedelta(days=days_ahead)
                         
@@ -135,6 +137,24 @@ class PrayerTimeCoordinator(DataUpdateCoordinator):
                                     if isinstance(jumuah_labels, list) and len(jumuah_labels) > i:
                                         label_key = f"jumuah_{i+1}_label"
                                         prayer_times_info[label_key] = jumuah_labels[i]
+
+                    # Fallback for tomorrow if not already populated from preferred year schedule
+                    if "tomorrow_fajr_begins" not in prayer_times_info and "tomorrow" in today_dict and isinstance(today_dict["tomorrow"], dict):
+                        _LOGGER.info(f"Populating tomorrow data from todayendpoint fallback: {today_dict['tomorrow']}")
+                        self._process_tomorrow_data(today_dict["tomorrow"], prayer_times_info)
+
+                    # If today's prayer times were not found from yearendpoint, extract from today_dict
+                    if "fajr_begins" not in prayer_times_info:
+                        _LOGGER.debug("Populating today's prayer times from todayendpoint")
+                        now_dt = dt_util.now()
+                        today_date = now_dt.date()
+                        for key, value in today_dict.items():
+                            if key in ["d_date", "tomorrow", "is_ramadan", "jamah_changes", "next_prayer", "jumuah", "jumuah_label"]:
+                                continue
+                            elif prayer_time := dt_util.parse_time(str(value)):
+                                prayer_datetime = datetime.combine(today_date, prayer_time)
+                                prayer_times_info[str(key)] = dt_util.as_utc(prayer_datetime)
+                                prayer_times_info[f"{key}_time"] = prayer_time.strftime("%H:%M")
         except Exception as err:
             _LOGGER.warning(f"Failed to fetch today's extra data: {err}")
         
@@ -196,62 +216,136 @@ class PrayerTimeCoordinator(DataUpdateCoordinator):
         except Exception as err:
             raise UpdateFailed(f"Failed to load saved prayer time data: {err}") from err
 
+    def _process_tomorrow_data(
+        self,
+        tomorrow_data: dict,
+        prayer_times_info: dict[str, Any],
+        tomorrow_dt: Any = None,
+    ) -> None:
+        """Process tomorrow's prayer times into prayer_times_info."""
+        if not isinstance(tomorrow_data, dict):
+            return
+
+        today_date = dt_util.now().date()
+        if tomorrow_dt is None:
+            tomorrow_dt = today_date + timedelta(days=1)
+            if "d_date" in tomorrow_data:
+                try:
+                    tomorrow_dt = datetime.strptime(str(tomorrow_data["d_date"]), "%Y-%m-%d").date()
+                except ValueError:
+                    pass
+
+        prayer_times_info["tomorrow_d_date"] = tomorrow_dt.strftime("%Y-%m-%d")
+
+        for key, value in tomorrow_data.items():
+            if key in ["d_date", "is_ramadan", "jamah_changes", "next_prayer", "jumuah", "jumuah_label"]:
+                continue
+            elif key in ["hijri_date", "hijri_date_convert"]:
+                prayer_times_info[f"tomorrow_{key}"] = value
+            elif prayer_time := dt_util.parse_time(str(value)):
+                prayer_datetime = datetime.combine(tomorrow_dt, prayer_time)
+                prayer_datetime_utc = dt_util.as_utc(prayer_datetime)
+                prayer_times_info[f"tomorrow_{key}"] = prayer_datetime_utc
+                prayer_times_info[f"tomorrow_{key}_time"] = prayer_time.strftime("%H:%M")
+
+        # Alias tomorrow_asr_begins and tomorrow_asr_mithl_1
+        if "tomorrow_asr_mithl_1" in prayer_times_info and "tomorrow_asr_begins" not in prayer_times_info:
+            prayer_times_info["tomorrow_asr_begins"] = prayer_times_info["tomorrow_asr_mithl_1"]
+            prayer_times_info["tomorrow_asr_begins_time"] = prayer_times_info["tomorrow_asr_mithl_1_time"]
+        elif "tomorrow_asr_begins" in prayer_times_info and "tomorrow_asr_mithl_1" not in prayer_times_info:
+            prayer_times_info["tomorrow_asr_mithl_1"] = prayer_times_info["tomorrow_asr_begins"]
+            prayer_times_info["tomorrow_asr_mithl_1_time"] = prayer_times_info["tomorrow_asr_begins_time"]
+
     def _process_data(self, data: list) -> Dict[str, Any]:
         """Process the prayer time data to extract today's times."""
         _LOGGER.debug(f"_process_data: Processing data to extract today's prayer times")
-        today = datetime.now().strftime("%Y-%m-%d")
-        _LOGGER.debug(f"Looping through prayer for today: {today}")
-        prayer_times_info: dict[str, Any] = {}
-        # Check if data is in the expected format
-        if not isinstance(data, list) or len(data) == 0:
+        # Check if data is in the expected format (handle [[{...}, ...]] or [{...}, ...])
+        items = data
+        while isinstance(items, list) and len(items) > 0 and isinstance(items[0], list):
+            items = items[0]
+
+        if not isinstance(items, list) or len(items) == 0:
             raise ValueError("Invalid data format: Expected a non-empty list")
-        # Check if the first element is a list
-        if not isinstance(data[0], list):
-            raise ValueError("Invalid data format: Expected a list of lists")
-        # Check if the first element of the first list is a dictionary
-        if not isinstance(data[0][0], dict):
+        if not isinstance(items[0], dict):
             raise ValueError("Invalid data format: Expected a list of dictionaries")
-        for day_data in data[0]:
-            if day_data["d_date"] == today:
+
+        today_date = dt_util.now().date()
+        today = today_date.strftime("%Y-%m-%d")
+        tomorrow_date = today_date + timedelta(days=1)
+        tomorrow_str = tomorrow_date.strftime("%Y-%m-%d")
+
+        _LOGGER.debug(f"Looping through prayer for today: {today}, tomorrow: {tomorrow_str}")
+        prayer_times_info: dict[str, Any] = {}
+        tomorrow_day_row = None
+        nested_tomorrow = None
+        matched_today = False
+
+        for day_data in items:
+            if not isinstance(day_data, dict):
+                continue
+            d_date = day_data.get("d_date")
+            if d_date == today or (len(items) == 1 and not matched_today):
+                matched_today = True
                 _LOGGER.info(f"Parsed Prayer for today: {day_data}")
+                prayer_times_info["d_date"] = day_data.get("d_date", today)
                 
                 # Process today's data
                 for key, value in day_data.items():
-                    if key in ["d_date", "tomorrow", "is_ramadan"]:
+                    if key in ["d_date", "tomorrow", "is_ramadan", "jamah_changes", "next_prayer", "jumuah", "jumuah_label"]:
                         continue
-                    elif key == "hijri_date":
-                        prayer_times_info[str(key)] = day_data[key]
-                        _LOGGER.debug(f"Parsed Hijri date: {day_data[key]}")
+                    elif key in ["hijri_date", "hijri_date_convert"]:
+                        prayer_times_info[str(key)] = value
+                        _LOGGER.debug(f"Parsed Hijri date: {value}")
                     elif prayer_time := dt_util.parse_time(str(value)):
                         _LOGGER.debug(f"Parsed prayer time: {key} = {prayer_time}")
-                        prayer_datetime = datetime.combine(datetime.now().date(), prayer_time)
+                        prayer_datetime = datetime.combine(today_date, prayer_time)
                         prayer_datetime_utc = dt_util.as_utc(prayer_datetime)
                         prayer_times_info[str(key)] = prayer_datetime_utc
                         
                         # Add human readable time in HH:MM format
-                        prayer_times_info[f"{key}_time"] = str(value)[:5]
+                        prayer_times_info[f"{key}_time"] = prayer_time.strftime("%H:%M")
                     else:
                         _LOGGER.warning(f"Skipping invalid prayer time: {key} = {day_data[key]}")
+
+                # Also handle jumuah from day_data if present
+                if "jumuah" in day_data and isinstance(day_data["jumuah"], list):
+                    jumuah_list = day_data["jumuah"]
+                    jumuah_labels = day_data.get("jumuah_label", [])
+                    now_dt = dt_util.now()
+                    days_ahead = (4 - now_dt.weekday()) % 7
+                    target_date = now_dt.date() + timedelta(days=days_ahead)
+                    for i, jumuah_time in enumerate(jumuah_list):
+                        if jumuah_time:
+                            parsed_time = dt_util.parse_time(str(jumuah_time))
+                            if parsed_time:
+                                dt = datetime.combine(target_date, parsed_time)
+                                key = f"jumuah_{i+1}"
+                                prayer_times_info[key] = dt_util.as_utc(dt)
+                                if isinstance(jumuah_labels, list) and len(jumuah_labels) > i:
+                                    label_key = f"jumuah_{i+1}_label"
+                                    prayer_times_info[label_key] = jumuah_labels[i]
                         
-                # Process tomorrow's data if available
+                # Keep nested tomorrow object as candidate
                 if "tomorrow" in day_data and isinstance(day_data["tomorrow"], dict):
-                    tomorrow_data = day_data["tomorrow"]
-                    _LOGGER.info(f"Parsed Prayer for tomorrow: {tomorrow_data}")
-                    tomorrow_dt = datetime.now().date() + timedelta(days=1)
-                    
-                    for key, value in tomorrow_data.items():
-                        if key in ["d_date", "is_ramadan"]:
-                            continue
-                        elif key == "hijri_date":
-                            prayer_times_info[f"tomorrow_{key}"] = value
-                        elif prayer_time := dt_util.parse_time(str(value)):
-                            prayer_datetime = datetime.combine(tomorrow_dt, prayer_time)
-                            prayer_datetime_utc = dt_util.as_utc(prayer_datetime)
-                            prayer_times_info[f"tomorrow_{key}"] = prayer_datetime_utc
-                            
-                            # Add human readable time in HH:MM format
-                            prayer_times_info[f"tomorrow_{key}_time"] = str(value)[:5]
-                            
+                    nested_tomorrow = day_data["tomorrow"]
+
+            elif d_date == tomorrow_str:
+                tomorrow_day_row = day_data
+
+            # Early loop optimization: once both today and tomorrow rows are identified, exit loop
+            if matched_today and tomorrow_day_row is not None:
+                break
+
+        # Process tomorrow's prayer times:
+        # Preferred: from tomorrow's row in the year schedule
+        # Fallback: from nested "tomorrow" dictionary in today's entry
+        if tomorrow_day_row is not None:
+            _LOGGER.info(f"Parsed Prayer for tomorrow from year schedule row matching {tomorrow_str}")
+            self._process_tomorrow_data(tomorrow_day_row, prayer_times_info, tomorrow_date)
+        elif nested_tomorrow is not None:
+            _LOGGER.info("Parsed Prayer for tomorrow from nested tomorrow object")
+            self._process_tomorrow_data(nested_tomorrow, prayer_times_info, tomorrow_date)
+
         return prayer_times_info
 
     def _random_time_after_midnight(self) -> datetime:
